@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.gitignore
+db
+.zscripts
+tool-results
+*.log
+dev.log
+server.log
+scripts-compiled
+Dockerfile
+render.yaml
+.dockerignore

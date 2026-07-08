@@ -1,13 +1,11 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { routes } from '@/lib/ev-data';
 
 export async function GET() {
   try {
-    const routes = await db.routeAnalysis.findMany({
-      orderBy: { safeTravelScore: 'asc' },
-    });
+    const sorted = [...routes].sort((a, b) => a.safeTravelScore - b.safeTravelScore);
 
-    const formatted = routes.map(r => ({
+    const formatted = sorted.map(r => ({
       id: r.id,
       routeName: r.routeName,
       origin: r.origin,

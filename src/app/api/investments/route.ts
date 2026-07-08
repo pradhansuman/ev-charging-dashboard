@@ -1,13 +1,11 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { investments } from '@/lib/ev-data';
 
 export async function GET() {
   try {
-    const investments = await db.investmentOpportunity.findMany({
-      orderBy: { priorityScore: 'desc' },
-    });
+    const sorted = [...investments].sort((a, b) => b.priorityScore - a.priorityScore);
 
-    const formatted = investments.map(inv => ({
+    const formatted = sorted.map(inv => ({
       id: inv.id,
       location: inv.location,
       state: inv.state,

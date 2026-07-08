@@ -1,12 +1,8 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { stations } from '@/lib/ev-data';
 
 export async function GET() {
   try {
-    const stations = await db.chargingStation.findMany({
-      orderBy: { dateOperational: 'desc' }
-    });
-
     const operational = stations.filter(s => s.status === 'operational');
     const totalLocations = stations.length;
     const totalChargers = stations.reduce((sum, s) => sum + s.totalChargers, 0);
@@ -28,9 +24,9 @@ export async function GET() {
     const weekStart = new Date(todayStart.getTime() - 7 * 86400000);
     const monthStart = new Date(istNow.getFullYear(), istNow.getMonth(), 1);
 
-    const newToday = stations.filter(s => s.dateOperational >= todayStart && s.status === 'operational').length;
-    const newThisWeek = stations.filter(s => s.dateOperational >= weekStart && s.status === 'operational').length;
-    const newThisMonth = stations.filter(s => s.dateOperational >= monthStart && s.status === 'operational').length;
+    const newToday = stations.filter(s => new Date(s.dateOperational) >= todayStart && s.status === 'operational').length;
+    const newThisWeek = stations.filter(s => new Date(s.dateOperational) >= weekStart && s.status === 'operational').length;
+    const newThisMonth = stations.filter(s => new Date(s.dateOperational) >= monthStart && s.status === 'operational').length;
 
     const offlineStations = stations.filter(s => s.status !== 'operational' && s.status !== 'permanently_closed');
     const closedStations = stations.filter(s => s.status === 'permanently_closed');
@@ -65,7 +61,10 @@ export async function GET() {
     for (let i = 11; i >= 0; i--) {
       const mStart = new Date(istNow.getFullYear(), istNow.getMonth() - i, 1);
       const mEnd = new Date(istNow.getFullYear(), istNow.getMonth() - i + 1, 1);
-      const monthStations = stations.filter(s => s.dateOperational >= mStart && s.dateOperational < mEnd);
+      const monthStations = stations.filter(s => {
+        const d = new Date(s.dateOperational);
+        return d >= mStart && d < mEnd;
+      });
       const monthLabel = mStart.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
       monthlyTrend.push({
         month: monthLabel,

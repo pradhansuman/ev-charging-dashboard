@@ -1,20 +1,20 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { alerts } from '@/lib/ev-data';
 
 export async function GET() {
   try {
-    const alerts = await db.chargingAlert.findMany({
-      orderBy: { timestamp: 'desc' },
-    });
+    const sorted = [...alerts].sort((a, b) =>
+      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
 
-    const formatted = alerts.map(a => ({
+    const formatted = sorted.map(a => ({
       id: a.id,
       type: a.type,
       severity: a.severity,
       title: a.title,
       description: a.description,
       location: a.location,
-      timestamp: a.timestamp.toISOString(),
+      timestamp: a.timestamp,
     }));
 
     return NextResponse.json({ alerts: formatted });

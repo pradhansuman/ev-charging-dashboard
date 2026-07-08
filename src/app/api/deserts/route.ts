@@ -1,13 +1,11 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { deserts } from '@/lib/ev-data';
 
 export async function GET() {
   try {
-    const deserts = await db.chargingDesert.findMany({
-      orderBy: { nearestChargerDistanceKm: 'desc' },
-    });
+    const sorted = [...deserts].sort((a, b) => b.nearestChargerDistanceKm - a.nearestChargerDistanceKm);
 
-    const formatted = deserts.map(d => ({
+    const formatted = sorted.map(d => ({
       id: d.id,
       location: d.location,
       state: d.state,

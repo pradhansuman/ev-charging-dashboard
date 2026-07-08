@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { stations } from '@/lib/ev-data';
 
 export async function GET(request: Request) {
   try {
@@ -7,38 +7,36 @@ export async function GET(request: Request) {
     const filter = searchParams.get('filter') || 'all';
     const state = searchParams.get('state') || '';
 
-    let where: Record<string, unknown> = {};
+    let filtered = [...stations];
+
     if (filter === 'new') {
       const now = new Date();
       const istOffset = 5.5 * 60 * 60 * 1000;
       const istNow = new Date(now.getTime() + now.getTimezoneOffset() * 60 * 1000 + istOffset);
       const monthStart = new Date(istNow.getFullYear(), istNow.getMonth(), 1);
-      where.dateOperational = { gte: monthStart };
+      filtered = filtered.filter(s => new Date(s.dateOperational) >= monthStart);
     } else if (filter === 'offline') {
-      where.status = { in: ['under_maintenance', 'temporarily_unavailable', 'power_failure', 'communication_failure'] };
+      filtered = filtered.filter(s =>
+        ['under_maintenance', 'temporarily_unavailable', 'power_failure', 'communication_failure'].includes(s.status)
+      );
     } else if (filter === 'closed') {
-      where.status = 'permanently_closed';
+      filtered = filtered.filter(s => s.status === 'permanently_closed');
     } else if (filter === '24x7') {
-      where.is24x7 = true;
-      where.status = 'operational';
+      filtered = filtered.filter(s => s.is24x7 && s.status === 'operational');
     } else if (filter === 'ultrafast') {
-      where.ultraFastChargers = { gt: 0 };
-      where.status = 'operational';
+      filtered = filtered.filter(s => s.ultraFastChargers > 0 && s.status === 'operational');
     } else if (filter === 'highway') {
-      where.highway = { not: null };
-      where.status = 'operational';
+      filtered = filtered.filter(s => s.highway !== null && s.status === 'operational');
     }
 
     if (state) {
-      where.state = state;
+      filtered = filtered.filter(s => s.state === state);
     }
 
-    const stations = await db.chargingStation.findMany({
-      where,
-      orderBy: { dateOperational: 'desc' },
-    });
+    // Sort by dateOperational desc
+    filtered.sort((a, b) => new Date(b.dateOperational).getTime() - new Date(a.dateOperational).getTime());
 
-    const formatted = stations.map(s => ({
+    const formatted = filtered.map(s => ({
       id: s.id,
       name: s.name,
       operator: s.operator,
@@ -67,7 +65,7 @@ export async function GET(request: Request) {
       parkingAvailable: s.parkingAvailable,
       paymentMethods: s.paymentMethods,
       status: s.status,
-      dateOperational: s.dateOperational.toISOString(),
+      dateOperational: s.dateOperational,
       confidenceScore: s.confidenceScore,
     }));
 

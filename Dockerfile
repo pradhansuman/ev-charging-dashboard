@@ -22,7 +22,7 @@ ENV DATABASE_URL="file:/app/db/custom.db"
 RUN npx prisma generate
 RUN mkdir -p /app/db
 
-# Seed the database (install tsx just for this step)
+# Seed the database
 RUN npm install -g tsx
 RUN npx prisma db push --skip-generate
 RUN npx tsx scripts/seed-ev-data.ts
@@ -42,18 +42,16 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 
-# Copy Prisma CLI + client for schema sync at runtime
-COPY --from=builder /app/prisma ./prisma/
+# Copy Prisma client (for runtime queries)
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma/
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma/
-COPY --from=builder /app/node_modules/prisma ./node_modules/prisma/
 
 # Copy the pre-seeded database
 COPY --from=builder /app/db/custom.db /app/custom.db.seed
 
-# Persistent data directory for SQLite on Render disk
-RUN mkdir -p /data && chown nextjs:nodejs /data
-ENV DATABASE_URL="file:/data/custom.db"
+# Runtime db directory
+RUN mkdir -p /app/db && chown nextjs:nodejs /app/db
+ENV DATABASE_URL="file:/app/db/custom.db"
 
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh

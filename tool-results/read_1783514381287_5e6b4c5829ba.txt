@@ -1,0 +1,816 @@
+     1→"use client";
+     2→
+     3→import { useState } from "react";
+     4→import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+     5→import { useEVDashboard } from "@/hooks/use-ev-data";
+     6→import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+     7→import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+     8→import { Badge } from "@/components/ui/badge";
+     9→import { Progress } from "@/components/ui/progress";
+    10→import { ScrollArea } from "@/components/ui/scroll-area";
+    11→import { Separator } from "@/components/ui/separator";
+    12→import {
+    13→  Zap, MapPin, Activity, TrendingUp, AlertTriangle, Shield, Route,
+    14→  Building2, Radio, BatteryCharging, Car, Plug, Gauge, Map,
+    15→  ChevronRight, Clock, Wifi, WifiOff, Fuel, ShoppingBag, Hotel,
+    16→  Wrench, Hospital, ShieldAlert, TrainFront, Mountain, TreePine,
+    17→  Info, AlertCircle, CheckCircle2, XCircle, ArrowUpRight
+    18→} from "lucide-react";
+    19→import { SectionHeader } from "@/components/ev/section-header";
+    20→import { StatusBadge } from "@/components/ev/status-badge";
+    21→import { RiskScoreGauge } from "@/components/ev/risk-score-gauge";
+    22→import {
+    23→  ChartContainer, ChartTooltip, ChartTooltipContent,
+    24→} from "@/components/ui/chart";
+    25→import {
+    26→  BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line,
+    27→  PieChart, Pie, Cell, AreaChart, Area, RadialBarChart, RadialBar, Legend
+    28→} from "recharts";
+    29→
+    30→const queryClient = new QueryClient({
+    31→  defaultOptions: { queries: { staleTime: 60000, refetchInterval: 120000 } }
+    32→});
+    33→
+    34→const EV_COLORS = [
+    35→  "#10b981", "#f59e0b", "#ef4444", "#6366f1", "#ec4899",
+    36→  "#14b8a6", "#f97316", "#8b5cf6", "#06b6d4", "#84cc16",
+    37→  "#e11d48", "#0ea5e9", "#d946ef", "#22c55e", "#a855f7",
+    38→];
+    39→
+    40→function formatIST(iso: string) {
+    41→  const d = new Date(iso);
+    42→  return d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    43→}
+    44→
+    45→function timeAgo(iso: string) {
+    46→  const now = new Date();
+    47→  const d = new Date(iso);
+    48→  const diffMs = now.getTime() - d.getTime();
+    49→  const diffH = Math.floor(diffMs / 3600000);
+    50→  if (diffH < 1) return "Just now";
+    51→  if (diffH < 24) return `${diffH}h ago`;
+    52→  const diffD = Math.floor(diffH / 24);
+    53→  if (diffD < 7) return `${diffD}d ago`;
+    54→  return `${Math.floor(diffD / 7)}w ago`;
+    55→}
+    56→
+    57→// ─── STAT CARD ───
+    58→function StatCard({ icon: Icon, label, value, sub, color }: {
+    59→  icon: React.ComponentType<{ className?: string }>;
+    60→  label: string; value: string | number; sub?: string; color?: string;
+    61→}) {
+    62→  return (
+    63→    <Card className="relative overflow-hidden">
+    64→      <CardContent className="p-4 flex items-start gap-3">
+    65→        <div className={`rounded-lg p-2.5 ${color || "bg-emerald-100 text-emerald-700"}`}>
+    66→          <Icon className="h-5 w-5" />
+    67→        </div>
+    68→        <div className="min-w-0 flex-1">
+    69→          <p className="text-xs text-muted-foreground font-medium truncate">{label}</p>
+    70→          <p className="text-2xl font-bold tracking-tight mt-0.5">{value}</p>
+    71→          {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
+    72→        </div>
+    73→      </CardContent>
+    74→    </Card>
+    75→  );
+    76→}
+    77→
+    78→// ─── ALERT CARD ───
+    79→function AlertCard({ alert }: { alert: { type: string; severity: string; title: string; description: string; location: string; timestamp: string } }) {
+    80→  const severityConfig: Record<string, { bg: string; border: string; icon: React.ComponentType<{ className?: string }> }> = {
+    81→    critical: { bg: "bg-red-50 border-red-200 dark:bg-red-950/30 dark:border-red-900/50", border: "", icon: XCircle },
+    82→    warning: { bg: "bg-amber-50 border-amber-200 dark:bg-amber-950/30 dark:border-amber-900/50", border: "", icon: AlertTriangle },
+    83→    info: { bg: "bg-sky-50 border-sky-200 dark:bg-sky-950/30 dark:border-sky-900/50", border: "", icon: Info },
+    84→  };
+    85→  const cfg = severityConfig[alert.severity] || severityConfig.info;
+    86→  const Icon = cfg.icon;
+    87→  const iconColor = alert.severity === "critical" ? "text-red-500" : alert.severity === "warning" ? "text-amber-500" : "text-sky-500";
+    88→
+    89→  return (
+    90→    <div className={`rounded-lg border p-3 ${cfg.bg} transition-colors`}>
+    91→      <div className="flex items-start gap-2">
+    92→        <Icon className={`h-4 w-4 mt-0.5 shrink-0 ${iconColor}`} />
+    93→        <div className="min-w-0 flex-1">
+    94→          <p className="text-sm font-semibold leading-tight">{alert.title}</p>
+    95→          <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{alert.description}</p>
+    96→          <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+    97→            <MapPin className="h-3 w-3" />
+    98→            <span>{alert.location}</span>
+    99→            <span className="mx-1">·</span>
+   100→            <Clock className="h-3 w-3" />
+   101→            <span>{timeAgo(alert.timestamp)}</span>
+   102→          </div>
+   103→        </div>
+   104→      </div>
+   105→    </div>
+   106→  );
+   107→}
+   108→
+   109→// ─── STATION ROW ───
+   110→function StationRow({ s }: { s: Record<string, unknown> }) {
+   111→  const station = s as {
+   112→    name: string; operator: string; city: string; state: string;
+   113→    totalChargers: number; dcFastChargers: number; ultraFastChargers: number;
+   114→    is24x7: boolean; status: string; powerRatingsKW: string; dateOperational: string;
+   115→    highway?: string; ccs2Chargers: number; teslaCompatible: number; type2Chargers: number;
+   116→  };
+   117→  return (
+   118→    <div className="flex items-start gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors border border-transparent hover:border-border">
+   119→      <div className="rounded-lg p-2 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 shrink-0">
+   120→        <Plug className="h-4 w-4" />
+   121→      </div>
+   122→      <div className="min-w-0 flex-1">
+   123→        <div className="flex items-center gap-2 flex-wrap">
+   124→          <p className="text-sm font-semibold truncate">{station.name}</p>
+   125→          {station.highway && <Badge variant="outline" className="text-[10px] px-1.5 py-0"><TrainFront className="h-2.5 w-2.5 mr-0.5" />{station.highway}</Badge>}
+   126→          {station.is24x7 && <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-emerald-300 text-emerald-600">24x7</Badge>}
+   127→        </div>
+   128→        <p className="text-xs text-muted-foreground mt-0.5">{station.operator} · {station.city}, {station.state}</p>
+   129→        <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+   130→          <span className="text-xs"><strong>{station.totalChargers}</strong> chargers</span>
+   131→          <span className="text-xs text-muted-foreground">DC: {station.dcFastChargers} · UF: {station.ultraFastChargers}</span>
+   132→          <span className="text-xs text-muted-foreground">{station.powerRatingsKW} kW</span>
+   133→        </div>
+   134→      </div>
+   135→      <div className="text-right shrink-0">
+   136→        <StatusBadge status={station.status} />
+   137→        <p className="text-[10px] text-muted-foreground mt-1">{timeAgo(station.dateOperational)}</p>
+   138→      </div>
+   139→    </div>
+   140→  );
+   141→}
+   142→
+   143→// ─── DASHBOARD ───
+   144→function DashboardContent() {
+   145→  const { stats, allStations, newStations, offlineStations, alerts, routes, investments, deserts, isLoading } = useEVDashboard();
+   146→  const [activeTab, setActiveTab] = useState("overview");
+   147→
+   148→  if (isLoading || !stats) {
+   149→    return (
+   150→      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
+   151→        <div className="text-center">
+   152→          <div className="relative w-16 h-16 mx-auto mb-4">
+   153→            <Zap className="h-8 w-8 text-emerald-500 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+   154→            <div className="absolute inset-0 border-4 border-emerald-200 border-t-emerald-500 rounded-full animate-spin" />
+   155→          </div>
+   156→          <p className="text-sm text-muted-foreground">Loading EV Intelligence...</p>
+   157→        </div>
+   158→      </div>
+   159→    );
+   160→  }
+   161→
+   162→  const s = stats.summary;
+   163→
+   164→  const barChartConfig = {
+   165→    installations: { label: "Stations", color: "#10b981" },
+   166→    chargers: { label: "Chargers", color: "#f59e0b" },
+   167→  };
+   168→
+   169→  const pieConfig: Record<string, { label: string; color: string }> = {};
+   170→  stats.chargerTypeDistribution.forEach((c, i) => { pieConfig[c.type] = { label: c.type, color: EV_COLORS[i] }; });
+   171→
+   172→  const connConfig: Record<string, { label: string; color: string }> = {};
+   173→  stats.connectorDistribution.forEach((c, i) => { connConfig[c.type] = { label: c.type, color: EV_COLORS[i] }; });
+   174→
+   175→  const stateChartConfig: Record<string, { label: string; color: string }> = {};
+   176→  stats.stateBreakdown.slice(0, 10).forEach((st, i) => { stateChartConfig[st.state] = { label: st.state, color: EV_COLORS[i % EV_COLORS.length] }; });
+   177→
+   178→  const opChartConfig: Record<string, { label: string; color: string }> = {};
+   179→  stats.operatorMarketShare.forEach((op, i) => { opChartConfig[op.operator] = { label: op.operator, color: EV_COLORS[i % EV_COLORS.length] }; });
+   180→
+   181→  return (
+   182→    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-emerald-50/30">
+   183→      {/* HEADER */}
+   184→      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-border">
+   185→        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
+   186→          <div className="flex items-center gap-3">
+   187→            <div className="rounded-lg bg-emerald-600 p-2 text-white">
+   188→              <Zap className="h-5 w-5" />
+   189→            </div>
+   190→            <div>
+   191→              <h1 className="text-lg sm:text-xl font-bold tracking-tight">EV Charging Intelligence</h1>
+   192→              <p className="text-xs text-muted-foreground hidden sm:block">India&apos;s Live Charging Infrastructure Monitor</p>
+   193→            </div>
+   194→          </div>
+   195→          <div className="flex items-center gap-3">
+   196→            <Badge variant="outline" className="hidden sm:flex items-center gap-1.5 text-xs">
+   197→              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+   198→              Live
+   199→            </Badge>
+   200→            <p className="text-[10px] text-muted-foreground hidden md:block">
+   201→              Updated: {formatIST(stats.lastUpdated)}
+   202→            </p>
+   203→          </div>
+   204→        </div>
+   205→      </header>
+   206→
+   207→      {/* MAIN CONTENT */}
+   208→      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6">
+   209→        <Tabs value={activeTab} onValueChange={setActiveTab}>
+   210→          <TabsList className="w-full flex flex-wrap h-auto gap-1 bg-muted/50 p-1 mb-6">
+   211→            {[
+   212→              { id: "overview", icon: Activity, label: "Overview" },
+   213→              { id: "analytics", icon: TrendingUp, label: "Analytics" },
+   214→              { id: "stations", icon: MapPin, label: "Stations" },
+   215→              { id: "alerts", icon: AlertTriangle, label: "Alerts" },
+   216→              { id: "routes", icon: Route, label: "Routes" },
+   217→              { id: "deserts", icon: Mountain, label: "Risk Zones" },
+   218→              { id: "invest", icon: Building2, label: "Investments" },
+   219→            ].map(t => (
+   220→              <TabsTrigger key={t.id} value={t.id} className="flex items-center gap-1.5 text-xs sm:text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm">
+   221→                <t.icon className="h-3.5 w-3.5" />
+   222→                <span className="hidden sm:inline">{t.label}</span>
+   223→              </TabsTrigger>
+   224→            ))}
+   225→          </TabsList>
+   226→
+   227→          {/* ═══════════ OVERVIEW TAB ═══════════ */}
+   228→          <TabsContent value="overview" className="space-y-6">
+   229→            {/* New Station Highlights */}
+   230→            {(s.newToday > 0 || s.newThisWeek > 0) && (
+   231→              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+   232→                {s.newToday > 0 && (
+   233→                  <Card className="border-emerald-200 bg-emerald-50/50 dark:bg-emerald-950/20 dark:border-emerald-900/40">
+   234→                    <CardContent className="p-3 flex items-center gap-2">
+   235→                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+   236→                      <p className="text-sm font-medium"><strong>{s.newToday}</strong> new station{s.newToday > 1 ? "s" : ""} activated today</p>
+   237→                    </CardContent>
+   238→                  </Card>
+   239→                )}
+   240→                {s.newThisWeek > 0 && (
+   241→                  <Card className="border-sky-200 bg-sky-50/50 dark:bg-sky-950/20 dark:border-sky-900/40">
+   242→                    <CardContent className="p-3 flex items-center gap-2">
+   243→                      <TrendingUp className="h-4 w-4 text-sky-600" />
+   244→                      <p className="text-sm font-medium"><strong>{s.newThisWeek}</strong> new station{s.newThisWeek > 1 ? "s" : ""} this week</p>
+   245→                    </CardContent>
+   246→                  </Card>
+   247→                )}
+   248→              </div>
+   249→            )}
+   250→
+   251→            {/* Key Stats Grid */}
+   252→            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+   253→              <StatCard icon={MapPin} label="Total Locations" value={s.totalLocations} sub={`${s.operationalLocations} operational`} color="bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400" />
+   254→              <StatCard icon={Plug} label="Total Chargers" value={s.totalChargers} sub="Across all stations" color="bg-teal-100 text-teal-700 dark:bg-teal-950/40 dark:text-teal-400" />
+   255→              <StatCard icon={BatteryCharging} label="DC Fast Chargers" value={s.dcFastChargers} sub={`+ ${s.ultraFastChargers} Ultra Fast`} color="bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400" />
+   256→              <StatCard icon={Gauge} label="CCS2 Connectors" value={s.ccs2Chargers} sub="Dominant standard" color="bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-400" />
+   257→              <StatCard icon={Clock} label="24x7 Stations" value={s.charging24x7} sub="Round-the-clock" color="bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-400" />
+   258→              <StatCard icon={Zap} label="AC Chargers" value={s.acChargers} sub="Level 2" color="bg-lime-100 text-lime-700 dark:bg-lime-950/40 dark:text-lime-400" />
+   259→              <StatCard icon={Car} label="Tesla-Compatible" value={s.teslaCompatible} sub="NACS/CCS2" color="bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400" />
+   260→              <StatCard icon={AlertTriangle} label="Offline Stations" value={s.offlineStations} sub="Attention needed" color="bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-400" />
+   261→              <StatCard icon={TreePine} label="States Covered" value={stats.stateBreakdown.length} sub="Pan-India" color="bg-cyan-100 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-400" />
+   262→              <StatCard icon={ArrowUpRight} label="New This Month" value={s.newThisMonth} sub="Growing fast" color="bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-950/40 dark:text-fuchsia-400" />
+   263→            </div>
+   264→
+   265→            {/* Quick Connector Summary */}
+   266→            <Card>
+   267→              <CardHeader className="pb-3">
+   268→                <CardTitle className="text-base">Connector Type Distribution</CardTitle>
+   269→                <CardDescription>Breakdown of charger connector standards across India</CardDescription>
+   270→              </CardHeader>
+   271→              <CardContent>
+   272→                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2">
+   273→                  {stats.connectorDistribution.map((c) => (
+   274→                    <div key={c.type} className="text-center p-2 rounded-lg bg-muted/50">
+   275→                      <p className="text-lg font-bold">{c.count}</p>
+   276→                      <p className="text-[10px] text-muted-foreground font-medium">{c.type}</p>
+   277→                    </div>
+   278→                  ))}
+   279→                </div>
+   280→              </CardContent>
+   281→            </Card>
+   282→
+   283→            {/* Recent Alerts + Top States */}
+   284→            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+   285→              <Card>
+   286→                <CardHeader className="pb-3">
+   287→                  <div className="flex items-center justify-between">
+   288→                    <div>
+   289→                      <CardTitle className="text-base">Recent Alerts</CardTitle>
+   290→                      <Card className="p-0 h-0 border-0 mt-0"><CardDescription>Latest infrastructure updates</CardDescription></Card>
+   291→                    </div>
+   292→                    <Badge variant="outline" className="text-xs">{alerts?.length || 0} active</Badge>
+   293→                  </div>
+   294→                </CardHeader>
+   295→                <CardContent>
+   296→                  <ScrollArea className="h-[280px]">
+   297→                    <div className="space-y-2 pr-3">
+   298→                      {(alerts || []).slice(0, 8).map((a) => (
+   299→                        <AlertCard key={a.id} alert={a} />
+   300→                      ))}
+   301→                    </div>
+   302→                  </ScrollArea>
+   303→                </CardContent>
+   304→              </Card>
+   305→
+   306→              <Card>
+   307→                <CardHeader className="pb-3">
+   308→                  <CardTitle className="text-base">Top States by Infrastructure</CardTitle>
+   309→                  <Card className="p-0 h-0 border-0 mt-0"><CardDescription>Charging locations per state</CardDescription></Card>
+   310→                </CardHeader>
+   311→                <CardContent>
+   312→                  <div className="space-y-3">
+   313→                    {stats.stateBreakdown.slice(0, 8).map((st) => {
+   314→                      const maxStations = stats.stateBreakdown[0].stations;
+   315→                      const pct = Math.round((st.stations / maxStations) * 100);
+   316→                      return (
+   317→                        <div key={st.state} className="space-y-1">
+   318→                          <div className="flex items-center justify-between text-sm">
+   319→                            <span className="font-medium">{st.state}</span>
+   320→                            <span className="text-muted-foreground text-xs">{st.stations} locs · {st.chargers} chargers</span>
+   321→                          </div>
+   322→                          <div className="flex items-center gap-2">
+   323→                            <Progress value={pct} className="h-2 flex-1" />
+   324→                            <span className="text-xs text-muted-foreground w-10 text-right">{pct}%</span>
+   325→                          </div>
+   326→                        </div>
+   327→                      );
+   328→                    })}
+   329→                  </div>
+   330→                </CardContent>
+   331→              </Card>
+   332→            </div>
+   333→
+   334→            {/* Quick Route Safety */}
+   335→            <Card>
+   336→              <CardHeader className="pb-3">
+   337→                <CardTitle className="text-base">Route Safety at a Glance</CardTitle>
+   338→                <Card className="p-0 h-0 border-0 mt-0"><CardDescription>Major inter-city route safety scores</CardDescription></Card>
+   339→              </CardHeader>
+   340→              <CardContent>
+   341→                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+   342→                  {(routes || []).map((r) => (
+   343→                    <div key={r.id} className="text-center p-3 rounded-lg border bg-card">
+   344→                      <RiskScoreGauge score={r.safeTravelScore} label={r.routeName} />
+   345→                      <p className="text-xs text-muted-foreground mt-1">{r.totalDistanceKm}km · {r.chargerCount} chargers</p>
+   346→                    </div>
+   347→                  ))}
+   348→                </div>
+   349→              </CardContent>
+   350→            </Card>
+   351→          </TabsContent>
+   352→
+   353→          {/* ═══════════ ANALYTICS TAB ═══════════ */}
+   354→          <TabsContent value="analytics" className="space-y-6">
+   355→            {/* Growth Trend */}
+   356→            <Card>
+   357→              <CardHeader>
+   358→                <CardTitle className="text-base">Monthly Installation Trend</CardTitle>
+   359→                <Card className="p-0 h-0 border-0 mt-0"><CardDescription>New charging stations and chargers added per month</CardDescription></Card>
+   360→              </CardHeader>
+   361→              <CardContent>
+   362→                <ChartContainer config={barChartConfig} className="h-[300px] w-full">
+   363→                  <BarChart data={stats.monthlyTrend} barGap={4}>
+   364→                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+   365→                    <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+   366→                    <YAxis tick={{ fontSize: 11 }} />
+   367→                    <ChartTooltip content={<ChartTooltipContent />} />
+   368→                    <Bar dataKey="installations" fill="var(--color-installations)" radius={[4, 4, 0, 0]} name="Stations" />
+   369→                    <Bar dataKey="chargers" fill="var(--color-chargers)" radius={[4, 4, 0, 0]} name="Chargers" />
+   370→                  </BarChart>
+   371→                </ChartContainer>
+   372→              </CardContent>
+   373→            </Card>
+   374→
+   375→            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+   376→              {/* Charger Type Pie */}
+   377→              <Card>
+   378→                <CardHeader>
+   379→                  <CardTitle className="text-base">Charger Type Distribution</CardTitle>
+   380→                  <Card className="p-0 h-0 border-0 mt-0"><CardDescription>AC vs DC Fast vs Ultra Fast</CardDescription></Card>
+   381→                </CardHeader>
+   382→                <CardContent>
+   383→                  <ChartContainer config={pieConfig} className="h-[280px] w-full">
+   384→                    <PieChart>
+   385→                      <ChartTooltip content={<ChartTooltipContent />} />
+   386→                      <Pie data={stats.chargerTypeDistribution} cx="50%" cy="50%" innerRadius={50} outerRadius={90} dataKey="count" nameKey="type" paddingAngle={3} strokeWidth={0}>
+   387→                        {stats.chargerTypeDistribution.map((_, i) => (
+   388→                          <Cell key={i} fill={EV_COLORS[i]} />
+   389→                        ))}
+   390→                      </Pie>
+   391→                      <Legend />
+   392→                    </PieChart>
+   393→                  </ChartContainer>
+   394→                </CardContent>
+   395→              </Card>
+   396→
+   397→              {/* Connector Distribution */}
+   398→              <Card>
+   399→                <CardHeader>
+   400→                  <CardTitle className="text-base">Connector Standard Distribution</CardTitle>
+   401→                  <Card className="p-0 h-0 border-0 mt-0"><CardDescription>CCS2, Type-2, CHAdeMO, Bharat standards</CardDescription></Card>
+   402→                </CardHeader>
+   403→                <CardContent>
+   404→                  <ChartContainer config={connConfig} className="h-[280px] w-full">
+   405→                    <BarChart data={stats.connectorDistribution} layout="vertical" barSize={20}>
+   406→                      <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+   407→                      <XAxis type="number" tick={{ fontSize: 11 }} />
+   408→                      <YAxis type="category" dataKey="type" tick={{ fontSize: 11 }} width={90} />
+   409→                      <ChartTooltip content={<ChartTooltipContent />} />
+   410→                      <Bar dataKey="count" name="Connectors" radius={[0, 4, 4, 0]}>
+   411→                        {stats.connectorDistribution.map((_, i) => (
+   412→                          <Cell key={i} fill={EV_COLORS[i]} />
+   413→                        ))}
+   414→                      </Bar>
+   415→                    </BarChart>
+   416→                  </ChartContainer>
+   417→                </CardContent>
+   418→              </Card>
+   419→            </div>
+   420→
+   421→            {/* State-wise Bar Chart */}
+   422→            <Card>
+   423→              <CardHeader>
+   424→                <CardTitle className="text-base">State-wise Station Count</CardTitle>
+   425→                <Card className="p-0 h-0 border-0 mt-0"><CardDescription>Top states by number of charging locations</CardDescription></Card>
+   426→              </CardHeader>
+   427→              <CardContent>
+   428→                <ChartContainer config={stateChartConfig} className="h-[350px] w-full">
+   429→                  <BarChart data={stats.stateBreakdown} layout="vertical" barSize={18}>
+   430→                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+   431→                    <XAxis type="number" tick={{ fontSize: 11 }} />
+   432→                    <YAxis type="category" dataKey="state" tick={{ fontSize: 11 }} width={120} />
+   433→                    <ChartTooltip content={<ChartTooltipContent />} />
+   434→                    <Bar dataKey="stations" name="Locations" radius={[0, 4, 4, 0]}>
+   435→                      {stats.stateBreakdown.map((_, i) => (
+   436→                        <Cell key={i} fill={EV_COLORS[i % EV_COLORS.length]} />
+   437→                      ))}
+   438→                    </Bar>
+   439→                  </BarChart>
+   440→                </ChartContainer>
+   441→              </CardContent>
+   442→            </Card>
+   443→
+   444→            {/* Operator Market Share */}
+   445→            <Card>
+   446→              <CardHeader>
+   447→                <CardTitle className="text-base">Operator Market Share</CardTitle>
+   448→                <Card className="p-0 h-0 border-0 mt-0"><CardDescription>Market share by number of stations operated</CardDescription></Card>
+   449→              </CardHeader>
+   450→              <CardContent>
+   451→                <ChartContainer config={opChartConfig} className="h-[300px] w-full">
+   452→                  <PieChart>
+   453→                    <ChartTooltip content={<ChartTooltipContent />} />
+   454→                    <Pie data={stats.operatorMarketShare} cx="50%" cy="50%" outerRadius={110} dataKey="stations" nameKey="operator" paddingAngle={2} strokeWidth={0} label={({ operator, share }) => `${operator} (${share}%)`} labelLine={false}>
+   455→                      {stats.operatorMarketShare.map((_, i) => (
+   456→                        <Cell key={i} fill={EV_COLORS[i % EV_COLORS.length]} />
+   457→                      ))}
+   458→                    </Pie>
+   459→                  </PieChart>
+   460→                </ChartContainer>
+   461→              </CardContent>
+   462→            </Card>
+   463→
+   464→            {/* State Table */}
+   465→            <Card>
+   466→              <CardHeader>
+   467→                <CardTitle className="text-base">Complete State-wise Breakdown</CardTitle>
+   468→                <Card className="p-0 h-0 border-0 mt-0"><CardDescription>Detailed statistics for all covered states</CardDescription></Card>
+   469→              </CardHeader>
+   470→              <CardContent>
+   471→                <ScrollArea className="max-h-[400px]">
+   472→                  <table className="w-full text-sm">
+   473→                    <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
+   474→                      <tr className="border-b">
+   475→                        <th className="text-left p-2 font-semibold">State</th>
+   476→                        <th className="text-center p-2 font-semibold">Locations</th>
+   477→                        <th className="text-center p-2 font-semibold">Chargers</th>
+   478→                        <th className="text-center p-2 font-semibold">DC Fast</th>
+   479→                        <th className="text-center p-2 font-semibold">Ultra Fast</th>
+   480→                        <th className="text-center p-2 font-semibold">DC Ratio</th>
+   481→                      </tr>
+   482→                    </thead>
+   483→                    <tbody>
+   484→                      {stats.stateBreakdown.map((st) => (
+   485→                        <tr key={st.state} className="border-b last:border-0 hover:bg-muted/30">
+   486→                          <td className="p-2 font-medium">{st.state}</td>
+   487→                          <td className="p-2 text-center">{st.stations}</td>
+   488→                          <td className="p-2 text-center">{st.chargers}</td>
+   489→                          <td className="p-2 text-center">{st.dcFast}</td>
+   490→                          <td className="p-2 text-center">{st.ultraFast}</td>
+   491→                          <td className="p-2 text-center">
+   492→                            <Badge variant={st.dcFast / st.chargers > 0.3 ? "default" : "outline"} className="text-xs">
+   493→                              {Math.round((st.dcFast / st.chargers) * 100)}%
+   494→                            </Badge>
+   495→                          </td>
+   496→                        </tr>
+   497→                      ))}
+   498→                    </tbody>
+   499→                  </table>
+   500→                </ScrollArea>
+   501→              </CardContent>
+   502→            </Card>
+   503→          </TabsContent>
+   504→
+   505→          {/* ═══════════ STATIONS TAB ═══════════ */}
+   506→          <TabsContent value="stations" className="space-y-6">
+   507→            {/* Filter badges */}
+   508→            <div className="flex flex-wrap gap-2">
+   509→              <Badge variant="outline" className="text-xs cursor-pointer">All ({allStationsTotal || 0})</Badge>
+   510→              <Badge className="text-xs bg-emerald-100 text-emerald-700 border-emerald-200 cursor-pointer">New This Month ({newStationsTotal || 0})</Badge>
+   511→              <Badge className="text-xs bg-amber-100 text-amber-700 border-amber-200 cursor-pointer">Offline ({offlineStationsTotal || 0})</Badge>
+   512→            </div>
+   513→
+   514→            {/* New Stations */}
+   515→            <Card>
+   516→              <CardHeader className="pb-3">
+   517→                <SectionHeader title="Recently Commissioned Stations" subtitle="New charging stations added this month" icon={<Zap className="h-4 w-4 text-emerald-500" />} />
+   518→              </CardHeader>
+   519→              <CardContent>
+   520→                <ScrollArea className="max-h-[400px]">
+   521→                  <div className="space-y-1">
+   522→                    {(newStations || []).map((st) => (
+   523→                      <StationRow key={st.id} s={st as unknown as Record<string, unknown>} />
+   524→                    ))}
+   525→                    {(newStations || []).length === 0 && (
+   526→                      <p className="text-sm text-muted-foreground text-center py-8">No new stations this month</p>
+   527→                    )}
+   528→                  </div>
+   529→                </ScrollArea>
+   530→              </CardContent>
+   531→            </Card>
+   532→
+   533→            {/* Offline/Closed */}
+   534→            {(offlineStations || []).length > 0 && (
+   535→              <Card className="border-amber-200">
+   536→                <CardHeader className="pb-3">
+   537→                  <SectionHeader title="Offline / Under Maintenance" subtitle="Stations currently unavailable" icon={<AlertCircle className="h-4 w-4 text-amber-500" />} />
+   538→                </CardHeader>
+   539→                <CardContent>
+   540→                  <ScrollArea className="max-h-[300px]">
+   541→                    <div className="space-y-1">
+   542→                      {(offlineStations || []).map((st) => (
+   543→                        <StationRow key={st.id} s={st as unknown as Record<string, unknown>} />
+   544→                      ))}
+   545→                    </div>
+   546→                  </ScrollArea>
+   547→                </CardContent>
+   548→              </Card>
+   549→            )}
+   550→
+   551→            {/* All Stations */}
+   552→            <Card>
+   553→              <CardHeader className="pb-3">
+   554→                <SectionHeader title="All Charging Stations" subtitle={`Showing ${(allStations || []).length} stations`} icon={<MapPin className="h-4 w-4" />} />
+   555→              </CardHeader>
+   556→              <CardContent>
+   557→                <ScrollArea className="max-h-[500px]">
+   558→                  <div className="space-y-1">
+   559→                    {(allStations || []).map((st) => (
+   560→                      <StationRow key={st.id} s={st as unknown as Record<string, unknown>} />
+   561→                    ))}
+   562→                  </div>
+   563→                </ScrollArea>
+   564→              </CardContent>
+   565→            </Card>
+   566→          </TabsContent>
+   567→
+   568→          {/* ═══════════ ALERTS TAB ═══════════ */}
+   569→          <TabsContent value="alerts" className="space-y-6">
+   570→            {/* Alert summary */}
+   571→            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+   572→              <StatCard icon={Info} label="Info Alerts" value={(alerts || []).filter(a => a.severity === "info").length} color="bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-400" />
+   573→              <StatCard icon={AlertTriangle} label="Warnings" value={(alerts || []).filter(a => a.severity === "warning").length} color="bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400" />
+   574→              <StatCard icon={XCircle} label="Critical" value={(alerts || []).filter(a => a.severity === "critical").length} color="bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400" />
+   575→            </div>
+   576→
+   577→            <Card>
+   578→              <CardHeader className="pb-3">
+   579→                <SectionHeader title="All Active Alerts" subtitle="Real-time infrastructure monitoring alerts" icon={<Radio className="h-4 w-4 text-emerald-500" />} />
+   580→              </CardHeader>
+   581→              <CardContent>
+   582→                <ScrollArea className="max-h-[600px]">
+   583→                  <div className="space-y-2 pr-3">
+   584→                    {(alerts || []).map((a) => (
+   585→                      <AlertCard key={a.id} alert={a} />
+   586→                    ))}
+   587→                  </div>
+   588→                </ScrollArea>
+   589→              </CardContent>
+   590→            </Card>
+   591→          </TabsContent>
+   592→
+   593→          {/* ═══════════ ROUTES TAB ═══════════ */}
+   594→          <TabsContent value="routes" className="space-y-6">
+   595→            <SectionHeader title="Route Risk Analysis" subtitle="Safety scores and charging availability for major Indian routes" icon={<Route className="h-5 w-5 text-emerald-500" />} />
+   596→
+   597→            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+   598→              {(routes || []).map((r) => {
+   599→                const scoreColor = r.safeTravelScore >= 80 ? "border-emerald-200 bg-emerald-50/30 dark:border-emerald-900/40" :
+   600→                  r.safeTravelScore >= 50 ? "border-amber-200 bg-amber-50/30 dark:border-amber-900/40" :
+   601→                    "border-red-200 bg-red-50/30 dark:border-red-900/40";
+   602→                const scoreLabel = r.safeTravelScore >= 80 ? "SAFE" : r.safeTravelScore >= 50 ? "CAUTION" : "RISKY";
+   603→                const scoreLabelColor = r.safeTravelScore >= 80 ? "text-emerald-600" : r.safeTravelScore >= 50 ? "text-amber-600" : "text-red-600";
+   604→
+   605→                return (
+   606→                  <Card key={r.id} className={`border ${scoreColor}`}>
+   607→                    <CardHeader className="pb-2">
+   608→                      <div className="flex items-center justify-between">
+   609→                        <CardTitle className="text-base">{r.routeName}</CardTitle>
+   610→                        <Badge variant="outline" className={scoreLabelColor}>{scoreLabel}</Badge>
+   611→                      </div>
+   612→                      <Card className="p-0 h-0 border-0 mt-0"><CardDescription>{r.origin} → {r.destination} · {r.totalDistanceKm} km</CardDescription></Card>
+   613→                    </CardHeader>
+   614→                    <CardContent className="space-y-3">
+   615→                      <div className="flex items-center justify-between">
+   616→                        <RiskScoreGauge score={r.safeTravelScore} />
+   617→                        <div className="text-right">
+   618→                          <p className="text-xs text-muted-foreground">Wait Time</p>
+   619→                          <p className="text-sm font-semibold">{r.avgWaitingTimeMin || "N/A"} min</p>
+   620→                        </div>
+   621→                      </div>
+   622→                      <div className="grid grid-cols-2 gap-2 text-xs">
+   623→                        <div className="p-2 rounded bg-muted/50">
+   624→                          <span className="text-muted-foreground">Chargers:</span> <strong>{r.chargerCount}</strong>
+   625→                        </div>
+   626→                        <div className="p-2 rounded bg-muted/50">
+   627→                          <span className="text-muted-foreground">Max Gap:</span> <strong>{r.maxDistanceBetween} km</strong>
+   628→                        </div>
+   629→                        <div className="p-2 rounded bg-muted/50">
+   630→                          <span className="text-muted-foreground">Fast Charge:</span> <strong>{r.fastChargingAvailable ? "Yes" : "No"}</strong>
+   631→                        </div>
+   632→                        <div className="p-2 rounded bg-muted/50">
+   633→                          <span className="text-muted-foreground">24x7:</span> <strong>{r.charging24x7 ? "Yes" : "No"}</strong>
+   634→                        </div>
+   635→                      </div>
+   636→                      {r.recommendedStops && (
+   637→                        <div>
+   638→                          <p className="text-xs font-semibold mb-1 flex items-center gap-1"><ChevronRight className="h-3 w-3" /> Recommended Stops</p>
+   639→                          <p className="text-xs text-muted-foreground">{r.recommendedStops}</p>
+   640→                        </div>
+   641→                      )}
+   642→                      {r.riskFactors && (
+   643→                        <div className={`p-2 rounded text-xs ${r.safeTravelScore < 50 ? "bg-red-100 dark:bg-red-950/30 text-red-700 dark:text-red-400" : "bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400"}`}>
+   644→                          <strong>Risk:</strong> {r.riskFactors}
+   645→                        </div>
+   646→                      )}
+   647→                    </CardContent>
+   648→                  </Card>
+   649→                );
+   650→              })}
+   651→            </div>
+   652→          </TabsContent>
+   653→
+   654→          {/* ═══════════ DESERTS / RISK ZONES TAB ═══════════ */}
+   655→          <TabsContent value="deserts" className="space-y-6">
+   656→            <SectionHeader title="Charging Desert Areas" subtitle="High-risk zones with minimal or no EV charging infrastructure" icon={<Mountain className="h-5 w-5 text-red-500" />} />
+   657→
+   658→            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+   659→              {(deserts || []).map((d) => {
+   660→                const riskColor = d.riskLevel === "critical" ? "border-red-300 bg-red-50/40 dark:bg-red-950/20 dark:border-red-900/50" :
+   661→                  d.riskLevel === "high" ? "border-orange-300 bg-orange-50/40 dark:bg-orange-950/20 dark:border-orange-900/50" :
+   662→                    "border-amber-200 bg-amber-50/30 dark:border-amber-900/40";
+   663→                const riskBadge = d.riskLevel === "critical" ? "bg-red-600 text-white" :
+   664→                  d.riskLevel === "high" ? "bg-orange-500 text-white" : "bg-amber-500 text-white";
+   665→
+   666→                return (
+   667→                  <Card key={d.id} className={`border ${riskColor}`}>
+   668→                    <CardHeader className="pb-2">
+   669→                      <div className="flex items-center justify-between">
+   670→                        <CardTitle className="text-base">{d.location}</CardTitle>
+   671→                        <Badge className={riskBadge}>{d.riskLevel.toUpperCase()}</Badge>
+   672→                      </div>
+   673→                      <Card className="p-0 h-0 border-0 mt-0"><CardDescription>{d.state}</CardDescription></Card>
+   674→                    </CardHeader>
+   675→                    <CardContent className="space-y-3">
+   676→                      <div className="grid grid-cols-2 gap-2 text-xs">
+   677→                        <div className="p-2 rounded bg-muted/50">
+   678→                          <p className="text-muted-foreground">Nearest Charger</p>
+   679→                          <p className="font-semibold text-sm">{d.nearestCharger}</p>
+   680→                        </div>
+   681→                        <div className="p-2 rounded bg-muted/50">
+   682→                          <p className="text-muted-foreground">Distance</p>
+   683→                          <p className="font-semibold text-sm">{d.nearestChargerDistanceKm} km</p>
+   684→                        </div>
+   685→                        <div className="p-2 rounded bg-muted/50">
+   686→                          <p className="text-muted-foreground">Road Condition</p>
+   687→                          <p className="font-semibold">{d.roadCondition}</p>
+   688→                        </div>
+   689→                        <div className="p-2 rounded bg-muted/50">
+   690→                          <p className="text-muted-foreground">Mobile Network</p>
+   691→                          <p className="font-semibold">{d.mobileNetwork}</p>
+   692→                        </div>
+   693→                      </div>
+   694→                      <Separator />
+   695→                      <div className="grid grid-cols-2 gap-2 text-xs">
+   696→                        <div className="p-2 rounded bg-red-50 dark:bg-red-950/30">
+   697→                          <p className="text-muted-foreground">Min Battery</p>
+   698→                          <p className="font-bold text-red-600 text-lg">{d.recommendedBatteryPct}%</p>
+   699→                        </div>
+   700→                        <div className="p-2 rounded bg-amber-50 dark:bg-amber-950/30">
+   701→                          <p className="text-muted-foreground">Min Range</p>
+   702→                          <p className="font-bold text-amber-600 text-lg">{d.recommendedMinRangeKm} km</p>
+   703→                        </div>
+   704→                      </div>
+   705→                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[10px] text-muted-foreground">
+   706→                        <div className="flex items-center gap-1 p-1.5 bg-muted/50 rounded"><Hotel className="h-3 w-3" />{d.nearbyHotels} hotels</div>
+   707→                        <div className="flex items-center gap-1 p-1.5 bg-muted/50 rounded"><Wrench className="h-3 w-3" />{d.nearbyRepairShops} repair</div>
+   708→                        <div className="flex items-center gap-1 p-1.5 bg-muted/50 rounded"><Hospital className="h-3 w-3" />{d.nearbyHospitals} hospitals</div>
+   709→                        <div className="flex items-center gap-1 p-1.5 bg-muted/50 rounded"><ShieldAlert className="h-3 w-3" />Police: {d.policeStationDistanceKm}km</div>
+   710→                      </div>
+   711→                      {d.emergencyChargingAlt && (
+   712→                        <p className="text-xs p-2 rounded bg-muted/50"><strong>Emergency Alt:</strong> {d.emergencyChargingAlt}</p>
+   713→                      )}
+   714→                      <div className="flex items-center gap-2">
+   715→                        {d.towingAvailable ? (
+   716→                          <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-300">Towing Available</Badge>
+   717→                        ) : (
+   718→                          <Badge variant="outline" className="text-[10px] text-red-600 border-red-300">No Towing</Badge>
+   719→                        )}
+   720→                      </div>
+   721→                    </CardContent>
+   722→                  </Card>
+   723→                );
+   724→              })}
+   725→            </div>
+   726→          </TabsContent>
+   727→
+   728→          {/* ═══════════ INVESTMENTS TAB ═══════════ */}
+   729→          <TabsContent value="invest" className="space-y-6">
+   730→            <SectionHeader title="Investment Opportunities" subtitle="AI-identified locations with high potential for new EV charging stations" icon={<Building2 className="h-5 w-5 text-emerald-500" />} />
+   731→
+   732→            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+   733→              {(investments || []).map((inv) => {
+   734→                const roiColor = inv.roiPotential === "very_high" ? "bg-emerald-600 text-white" :
+   735→                  inv.roiPotential === "high" ? "bg-emerald-500 text-white" :
+   736→                    inv.roiPotential === "medium" ? "bg-amber-500 text-white" : "bg-gray-500 text-white";
+   737→                const trafficColor = inv.trafficDensity === "very_high" ? "text-red-600" :
+   738→                  inv.trafficDensity === "high" ? "text-amber-600" : "text-emerald-600";
+   739→
+   740→                return (
+   741→                  <Card key={inv.id} className="hover:shadow-md transition-shadow">
+   742→                    <CardHeader className="pb-2">
+   743→                      <div className="flex items-center justify-between">
+   744→                        <CardTitle className="text-base">{inv.location}</CardTitle>
+   745→                        <Badge className={roiColor}>{inv.roiPotential.replace("_", " ").toUpperCase()}</Badge>
+   746→                      </div>
+   747→                      <Card className="p-0 h-0 border-0 mt-0"><CardDescription>{inv.city}, {inv.state}</CardDescription></Card>
+   748→                    </CardHeader>
+   749→                    <CardContent className="space-y-3">
+   750→                      {/* Priority Score Bar */}
+   751→                      <div className="space-y-1">
+   752→                        <div className="flex items-center justify-between text-xs">
+   753→                          <span className="text-muted-foreground">Priority Score</span>
+   754→                          <span className="font-bold">{inv.priorityScore}/100</span>
+   755→                        </div>
+   756→                        <Progress value={inv.priorityScore} className="h-2" />
+   757→                      </div>
+   758→
+   759→                      <div className="grid grid-cols-2 gap-2 text-xs">
+   760→                        <div className="p-2 rounded bg-muted/50">
+   761→                          <p className="text-muted-foreground">Traffic Density</p>
+   762→                          <p className={`font-semibold ${trafficColor}`}>{inv.trafficDensity.replace("_", " ")}</p>
+   763→                        </div>
+   764→                        <div className="p-2 rounded bg-muted/50">
+   765→                          <p className="text-muted-foreground">EV Population</p>
+   766→                          <p className="font-semibold">{inv.evPopulation.toLocaleString()}</p>
+   767→                        </div>
+   768→                        <div className="p-2 rounded bg-muted/50">
+   769→                          <p className="text-muted-foreground">Nearest Charger</p>
+   770→                          <p className="font-semibold">{inv.existingChargerDist} km</p>
+   771→                        </div>
+   772→                        <div className="p-2 rounded bg-muted/50">
+   773→                          <p className="text-muted-foreground">Expected Util.</p>
+   774→                          <p className="font-semibold">{Math.round(inv.expectedUtilization * 100)}%</p>
+   775→                        </div>
+   776→                      </div>
+   777→
+   778→                      {inv.tourismPotential && (
+   779→                        <Badge variant="outline" className="text-[10px]"><Mountain className="h-3 w-3 mr-1" />Tourism Potential</Badge>
+   780→                      )}
+   781→
+   782→                      <div className="grid grid-cols-3 gap-1.5 text-[10px] text-muted-foreground">
+   783→                        <div className="flex items-center gap-1 p-1.5 bg-muted/50 rounded"><ShoppingBag className="h-3 w-3" />{inv.nearbyRestaurants} food</div>
+   784→                        <div className="flex items-center gap-1 p-1.5 bg-muted/50 rounded"><Fuel className="h-3 w-3" />{inv.nearbyFuelStations} fuel</div>
+   785→                        <div className="flex items-center gap-1 p-1.5 bg-muted/50 rounded"><ShoppingBag className="h-3 w-3" />{inv.nearbyMalls} malls</div>
+   786→                        <div className="flex items-center gap-1 p-1.5 bg-muted/50 rounded"><Hotel className="h-3 w-3" />{inv.nearbyHotels} hotels</div>
+   787→                        <div className="flex items-center gap-1 p-1.5 bg-muted/50 rounded"><Car className="h-3 w-3" />{inv.nearbyParking} parking</div>
+   788→                        <div className="flex items-center gap-1 p-1.5 bg-muted/50 rounded"><MapPin className="h-3 w-3" />{inv.state}</div>
+   789→                      </div>
+   790→                    </CardContent>
+   791→                  </Card>
+   792→                );
+   793→              })}
+   794→            </div>
+   795→          </TabsContent>
+   796→        </Tabs>
+   797→
+   798→        {/* FOOTER */}
+   799→        <footer className="mt-12 pt-6 border-t">
+   800→          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted-foreground">
+   801→            <p>EV Charging Intelligence Agent — India | Data Sources: Government Portals, Open Charge Map, Operator APIs, Google Maps</p>
+   802→            <p>Confidence Score: 85% | Auto-refresh every 2 minutes</p>
+   803→          </div>
+   804→        </footer>
+   805→      </main>
+   806→    </div>
+   807→  );
+   808→}
+   809→
+   810→export default function EVDashboardPage() {
+   811→  return (
+   812→    <QueryClientProvider client={queryClient}>
+   813→      <DashboardContent />
+   814→    </QueryClientProvider>
+   815→  );
+   816→}

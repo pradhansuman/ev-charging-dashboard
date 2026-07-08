@@ -1,0 +1,114 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model ChargingStation {
+  id                String   @id @default(cuid())
+  name              String
+  operator          String
+  state             String
+  district          String
+  city              String
+  address           String
+  pinCode           String
+  highway           String?
+  latitude          Float
+  longitude         Float
+  totalChargers     Int
+  acChargers        Int      @default(0)
+  dcFastChargers    Int      @default(0)
+  ultraFastChargers Int      @default(0)
+  ccs2Chargers      Int      @default(0)
+  chademoChargers   Int      @default(0)
+  gbtChargers       Int      @default(0)
+  type2Chargers     Int      @default(0)
+  bharatAC001       Int      @default(0)
+  bharatDC001       Int      @default(0)
+  teslaCompatible   Int      @default(0)
+  powerRatingsKW    String   @default("")
+  is24x7            Boolean  @default(false)
+  amenities         String   @default("")
+  parkingAvailable  Boolean  @default(true)
+  paymentMethods    String   @default("")
+  status            String   @default("operational") // operational, temporarily_unavailable, under_maintenance, power_failure, communication_failure, permanently_closed
+  dateDetected      DateTime @default(now())
+  dateOperational   DateTime @default(now())
+  confidenceScore   Float    @default(0.85)
+  lastUpdated       DateTime @updatedAt
+}
+
+model ChargingAlert {
+  id          String   @id @default(cuid())
+  type        String   // new_charger, permanent_closure, offline, highway_gap, route_unsafe, operator_expansion, gov_announcement
+  severity    String   @default("info") // info, warning, critical
+  title       String
+  description String
+  location    String?
+  stationId   String?
+  timestamp   DateTime @default(now())
+  isRead      Boolean  @default(false)
+  lastUpdated DateTime @updatedAt
+}
+
+model RouteAnalysis {
+  id                    String   @id @default(cuid())
+  routeName             String
+  origin                String
+  destination           String
+  totalDistanceKm        Float
+  chargerCount          Int
+  maxDistanceBetween     Float
+  fastChargingAvailable Boolean  @default(true)
+  charging24x7          Boolean  @default(false)
+  avgWaitingTimeMin     Float?
+  safeTravelScore       Float    @default(0)
+  recommendedStops      String   @default("")
+  backupStations        String   @default("")
+  riskFactors           String   @default("")
+  lastUpdated           DateTime @updatedAt
+}
+
+model InvestmentOpportunity {
+  id                  String   @id @default(cuid())
+  location            String
+  state               String
+  city                String
+  trafficDensity      String   @default("medium") // low, medium, high, very_high
+  tourismPotential    Boolean  @default(false)
+  evPopulation        Int      @default(0)
+  existingChargerDist Float    @default(0)
+  nearbyRestaurants   Int      @default(0)
+  nearbyFuelStations  Int      @default(0)
+  nearbyMalls         Int      @default(0)
+  nearbyHotels        Int      @default(0)
+  nearbyParking       Int      @default(0)
+  expectedUtilization Float    @default(0)
+  roiPotential        String   @default("medium") // low, medium, high, very_high
+  priorityScore       Float    @default(0)
+  lastUpdated         DateTime @updatedAt
+}
+
+model ChargingDesert {
+  id                         String  @id @default(cuid())
+  location                   String
+  state                      String
+  nearestCharger             String
+  nearestChargerDistanceKm   Float
+  roadCondition              String  @default("good") // excellent, good, fair, poor, unpaved
+  mobileNetwork              String  @default("4G") // 5G, 4G, 3G, 2G, no_signal
+  recommendedBatteryPct      Int
+  recommendedMinRangeKm      Int
+  emergencyChargingAlt       String  @default("")
+  nearbyHotels               Int     @default(0)
+  nearbyRepairShops          Int     @default(0)
+  nearbyHospitals            Int     @default(0)
+  policeStationDistanceKm    Float   @default(0)
+  towingAvailable            Boolean @default(false)
+  riskLevel                  String  @default("medium") // low, medium, high, critical
+  lastUpdated                DateTime @updatedAt
+}
